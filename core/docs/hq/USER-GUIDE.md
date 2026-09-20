@@ -128,19 +128,20 @@ Send a person-to-person notification to a teammate. They receive it in their HQ 
 
 Receiving is handled by the **HQ Desktop App** (it's receive-only — there's no send UI; sending is session/CLI only). You can only DM someone you share an active company with; DM your own email for a note-to-self or reminder. Never put secrets in a DM body/prompt/details — they're stored server-side.
 
-### HQ CLI: Service discovery (`hq services`)
+### Service discovery (`/hq-services`)
 
-Find and set up developer services (databases, auth, hosting, payments, email, monitoring) from a session. Backed by Gravity Index. Full reference: `.claude/skills/hq-services/SKILL.md` (`/hq-services`).
+Find and set up developer services (databases, auth, hosting, payments, email, monitoring) from a session. Backed by Gravity Index through HQ's services proxy — your HQ login is the only credential involved. Full reference: `.claude/skills/hq-services/SKILL.md`.
 
 | Command | What it does |
 |---------|--------------|
-| `hq services search "<need>"` | Ranked recommendation with a reason, integration steps, and a tracked setup link |
-| `hq services search "<follow-up>" --follow-up <search_id>` | Refine a previous search in context |
-| `hq services browse [query] [--category <name>]` | List the catalog |
-| `hq services info <slug>` | One service: pricing, integration steps, env vars needed |
-| `hq services provision <slug> --search-id <id>` | Create the account with the user's consent; credentials land in `hq secrets`, never in chat |
+| `core/scripts/hq-services.sh search "<need>"` | Recommendation with a reason, integration steps, and a tracked setup link |
+| `core/scripts/hq-services.sh search "<follow-up>" --follow-up <search_id>` | Refine a previous search in context |
+| `core/scripts/hq-services.sh browse [query]` | List the catalog |
+| `core/scripts/hq-services.sh info <slug>` | One service: pricing, integration steps, env vars needed |
+| `core/scripts/hq-services.sh provision <slug> --search-id <id> --consent` | Create the account after you say yes; credentials land in `hq secrets`, never in chat |
+| `core/scripts/hq-services.sh status <provision_id>` | Lifecycle state of a provision |
 
-The company publisher key lives in the `GRAVITY_PUBLISHER_KEY` secret (`hq secrets set GRAVITY_PUBLISHER_KEY`). Provisioning always asks first, once per service.
+Provisioning always asks first, once per service. Server contract for hq-pro: `core/knowledge/public/hq-core/hq-services-proxy-spec.md`.
 
 ### Company & Infrastructure
 | Command | What it does |

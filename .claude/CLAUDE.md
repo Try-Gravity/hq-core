@@ -29,8 +29,8 @@ scaffolds, supervises, and syncs work across repos and companies.
   fleet agents (identity → membership → vault → grants → verified probe).
 - Direct messages and reminders: `/dm` or `hq dm`.
 - Find or set up a developer service the project lacks (database, auth,
-  hosting, payments): `/hq-services` or `hq services`; provisioning asks
-  the user first.
+  hosting, payments): `/hq-services` (`core/scripts/hq-services.sh`);
+  provisioning asks the user first.
 - Hand a project to a person or fleet agent: `/delegate` (verified vault
   grants, branch + secrets handover, ownership transfer, self-pulling
   pickup DM — never hand-roll this flow from share/dm primitives).

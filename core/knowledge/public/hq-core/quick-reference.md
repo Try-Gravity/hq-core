@@ -172,19 +172,20 @@ Send a person-to-person notification to a teammate's HQ Desktop App. Skill: `.cl
 
 Receive-only in the app — sending is session/CLI only. You can only DM someone you share an active company with; DM your own email for a note-to-self/reminder. Never put secrets in a DM (stored server-side).
 
-## CLI: `hq services` (service discovery)
+## Service discovery (`/hq-services`)
 
-Find and set up developer services (database, auth, hosting, payments, email, monitoring) through Gravity Index. Skill: `.claude/skills/hq-services/SKILL.md` (`/hq-services`).
+Find and set up developer services (database, auth, hosting, payments, email, monitoring) through Gravity Index via HQ's services proxy (hq-pro `/services/*`, HQ Cognito auth; no Gravity key on the client). Skill: `.claude/skills/hq-services/SKILL.md`. Server contract: `hq-services-proxy-spec.md`.
 
 | Command | Use |
 |---------|-----|
-| `hq services search "<need>"` | Ranked recommendation + reason + `search_id`; tracked `setup_url` |
-| `hq services search "<q>" --follow-up <search_id>` | Refine in context |
-| `hq services browse [query] [--category <name>]` | Catalog listing |
-| `hq services info <slug>` | Integration steps, env vars, pricing |
-| `hq services provision <slug> --search-id <id>` | Consent-gated account creation; credentials go to `hq secrets`, names only in output |
+| `core/scripts/hq-services.sh search "<need>"` | Recommendation + reason + `search_id`; tracked setup link |
+| `core/scripts/hq-services.sh search "<q>" --follow-up <search_id>` | Refine in context |
+| `core/scripts/hq-services.sh browse [query]` | Catalog listing |
+| `core/scripts/hq-services.sh info <slug>` | Integration steps, env vars, pricing, provisioning mode |
+| `core/scripts/hq-services.sh provision <slug> --search-id <id> --consent` | Account creation; `--consent` only after a human yes; credentials go to `hq secrets`, names only in output |
+| `core/scripts/hq-services.sh status <provision_id>` | Lifecycle state, credential fingerprint |
 
-Publisher key: company secret `GRAVITY_PUBLISHER_KEY` (set via `/hq-secrets`). One consent per provision; never provision in unattended runs.
+Exit 3 = run `/hq-login`; exit 4 = missing `--consent`; exit 5 = one-time link spent but a vault write failed (recover via vendor ownership email). One consent per provision; never provision in unattended runs.
 
 ## Command ↔ Skill Shapes
 

@@ -176,6 +176,7 @@ jobs:
           bash core/scripts/lint-skill-script-refs.sh resumework
           bash core/scripts/lint-skill-script-refs.sh startwork
           bash core/scripts/lint-skill-script-refs.sh conduct
+          bash core/scripts/lint-skill-script-refs.sh hq-services
       - name: /conduct session worker pool (cap, resume, recycle)
         run: bash core/scripts/tests/conduct-pool.test.sh
       - name: /conduct lane drop box (queue, claim, per-event hook output)
@@ -743,6 +744,8 @@ jobs:
         run: bash core/scripts/tests/harness-live-smoke.sh --runtimes claude,codex,grok
       - name: hq-session mints scope capability on company bind
         run: bash core/scripts/tests/hq-session.test.sh
+      - name: hq-services proxies through hq-pro (bearer via stdin, consent gate, one-shot credentials)
+        run: bash core/scripts/tests/hq-services.test.sh
       - name: Bounded-action scope contract (Claude+Codex shared text)
         run: bash core/scripts/tests/startwork-bounded-action-contract.test.sh
       - name: Company infra policy reminder follows the firing session
