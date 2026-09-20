@@ -172,6 +172,20 @@ Send a person-to-person notification to a teammate's HQ Desktop App. Skill: `.cl
 
 Receive-only in the app — sending is session/CLI only. You can only DM someone you share an active company with; DM your own email for a note-to-self/reminder. Never put secrets in a DM (stored server-side).
 
+## CLI: `hq services` (service discovery)
+
+Find and set up developer services (database, auth, hosting, payments, email, monitoring) through Gravity Index. Skill: `.claude/skills/hq-services/SKILL.md` (`/hq-services`).
+
+| Command | Use |
+|---------|-----|
+| `hq services search "<need>"` | Ranked recommendation + reason + `search_id`; tracked `setup_url` |
+| `hq services search "<q>" --follow-up <search_id>` | Refine in context |
+| `hq services browse [query] [--category <name>]` | Catalog listing |
+| `hq services info <slug>` | Integration steps, env vars, pricing |
+| `hq services provision <slug> --search-id <id>` | Consent-gated account creation; credentials go to `hq secrets`, names only in output |
+
+Publisher key: company secret `GRAVITY_PUBLISHER_KEY` (set via `/hq-secrets`). One consent per provision; never provision in unattended runs.
+
 ## Command ↔ Skill Shapes
 
 Every command exists as `.claude/commands/{name}.md` (the slash-command entry point) and most have a paired `.claude/skills/{name}/SKILL.md` (the Skill-tool canonical logic). Two valid shapes:

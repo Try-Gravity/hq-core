@@ -1,5 +1,8 @@
 ## [Unreleased]
 
+### Added — `/hq-services`: service discovery through Gravity Index (2026-09-20)
+- **New core skill `hq-services`** documents `hq services search|browse|info|provision|status`, the HQ CLI surface over [Gravity Index](https://index.trygravity.ai). When a task needs a developer service the project does not have (database, auth, hosting, payments, email, monitoring), sessions search the Index for a ranked recommendation with integration steps and a tracked setup link instead of picking a vendor from memory. Provisioning creates the vendor account and lands the credentials in `hq secrets`; it is consent-gated per service and never runs unattended. The publisher key is the company secret `GRAVITY_PUBLISHER_KEY`. Charter, quick reference, and user guide point at the new path. Requires the `services` command in `@indigoai-us/hq-cli` (companion CLI release).
+
 ### Fixed — default company anchors sessions and planning (US-008)
 
 - Sessions and company-anchoring skills now use an enabled device default company when no explicit prompt or session company exists. SessionStart records `company_source: device_default`; fleet identities, disabled defaults, and `needsChoice` states remain unbound and open the normal chooser. At HQ root, `/plan` now files company work under the selected company and can complete Work Mesh registration.
