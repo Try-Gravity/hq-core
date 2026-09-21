@@ -4,12 +4,10 @@
 #
 # Cases:
 #   1. search → POST /services/search with bearer token from identity-resolve, search_id kept
-#   2. follow-up search carries search_id; browse/info/status hit the right routes
+#   2. follow-up search carries search_id; browse/info hit the right routes
 #   3. login_required → exit 3, no HTTP request
 #   4. 401 → one forced refresh, then success
-#   5. provision without --consent → exit 4, no HTTP request
-#   6. provision --consent → one-time credentials POSTed once, values land in
-#      `hq secrets set --from-stdin`, names only in stdout, no token on argv
+#   5. provision/status are not commands (removed until hq-pro ships the proxy)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -26,7 +24,6 @@ TMP="$(mktemp -d "${TMPDIR:-/tmp}/hq-services-test.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
 BIN="$TMP/bin"; mkdir -p "$BIN"
 LOG="$TMP/curl.log"; : > "$LOG"
-SECRETS="$TMP/secrets.log"; : > "$SECRETS"
 FIX="$TMP/fixtures"; mkdir -p "$FIX"
 
 # --- stubs -------------------------------------------------------------------
@@ -79,29 +76,8 @@ esac
 STUB
 chmod +x "$IDRES"
 
-# hq stub: `hq secrets [--company X|--personal] set KEY --from-stdin`
-cat > "$BIN/hq" <<'STUB'
-#!/usr/bin/env bash
-if [ "${1:-}" = "secrets" ]; then
-  shift; scope="default"
-  while [ $# -gt 0 ]; do
-    case "$1" in
-      --company) scope="company:$2"; shift 2 ;;
-      --personal) scope="personal"; shift ;;
-      set) key="$2"; shift 2 ;;
-      --from-stdin) val="$(cat)"; shift ;;
-      *) shift ;;
-    esac
-  done
-  printf '%s %s %s\n' "$scope" "$key" "$val" >> "$SECRETS_LOG"
-  exit 0
-fi
-exit 1
-STUB
-chmod +x "$BIN/hq"
-
 export PATH="$BIN:$PATH"
-export CURL_LOG="$LOG" CURL_FIX="$FIX" SECRETS_LOG="$SECRETS"
+export CURL_LOG="$LOG" CURL_FIX="$FIX"
 export IDENTITY_CALLS="$TMP/identity.calls"; : > "$IDENTITY_CALLS"
 export HQ_SERVICES_IDENTITY_RESOLVE="$IDRES"
 export HQ_PRO_API_URL="https://hqapi.test"
@@ -123,20 +99,6 @@ JSON
 cat > "$FIX/services_supabase.json" <<'JSON'
 {"slug":"supabase","name":"Supabase","category":"database","description":"Postgres","env_vars_needed":["SUPABASE_URL"],"provisioning_mode":"api"}
 JSON
-cat > "$FIX/services_provision.json" <<'JSON'
-{"api_version":"2026-05-23","provision_id":"prov_1","service_slug":"supabase","provisioning_mode":"api","status":"active",
- "grclid":"g1","integration_steps":[{"step":1,"action":"Install client"}],"env_vars":["SUPABASE_URL","SUPABASE_ANON_KEY"],
- "credential_keys":["SUPABASE_URL","SUPABASE_ANON_KEY"],
- "credentials_url":"https://index.trygravity.ai/provision/credentials/onetime-tok",
- "ownership_url":"https://index.trygravity.ai/own/x"}
-JSON
-echo 201 > "$FIX/services_provision.status"
-cat > "$FIX/provision_credentials_onetime-tok.json" <<'JSON'
-{"credentials":{"SUPABASE_URL":"https://x.supabase.co","SUPABASE_ANON_KEY":"anon-VALUE-9f3"}}
-JSON
-cat > "$FIX/services_provision_prov_1.json" <<'JSON'
-{"provision_id":"prov_1","service_slug":"supabase","status":"active","provisioning_mode":"api","created_at":"2026-09-20T00:00:00Z","credentials_fingerprint":"ab12"}
-JSON
 
 # --- 1. search ---------------------------------------------------------------
 run search "postgres database with auth"
@@ -147,7 +109,6 @@ grep -q 'TOKEN_ON_ARGV' "$LOG" && fail "token leaked to curl argv"
 grep -q '^BODY {"query":"postgres database with auth"}$' "$LOG" || fail "search body: $(grep BODY "$LOG")"
 printf '%s' "$OUT" | grep -q 'Supabase' || fail "search output missing recommendation"
 printf '%s' "$OUT" | grep -q 'search_id: srch_123' || fail "search output missing search_id"
-printf '%s' "$OUT" | grep -q 'provision supabase --search-id srch_123 --consent' || fail "search output missing provision hint"
 printf '%s' "$OUT" | grep -q 'id-tok-secret' && fail "token in stdout"
 pass "search → POST /services/search with bearer, search_id surfaced"
 
@@ -166,13 +127,8 @@ printf '%s' "$OUT" | grep -q 'clerk' || fail "browse output"
 run info supabase
 [ "$RC" = 0 ] || fail "info rc=$RC: $ERR"
 grep -q '^GET https://hqapi.test/services/supabase$' "$LOG" || fail "info route"
-printf '%s' "$OUT" | grep -q 'Provisioning: api' || fail "info output"
-: > "$LOG"
-run status prov_1
-[ "$RC" = 0 ] || fail "status rc=$RC: $ERR"
-grep -q '^GET https://hqapi.test/services/provision/prov_1$' "$LOG" || fail "status route"
-printf '%s' "$OUT" | grep -q 'fingerprint: ab12' || fail "status output"
-pass "follow-up search_id, browse/info/status routes"
+printf '%s' "$OUT" | grep -q 'Env vars: SUPABASE_URL' || fail "info output"
+pass "follow-up search_id, browse/info routes"
 
 # --- 3. not signed in --------------------------------------------------------
 : > "$LOG"
@@ -191,30 +147,15 @@ run search "retry me"
 [ "$(grep -c refresh "$IDENTITY_CALLS")" = 1 ] || fail "expected one --force-refresh"
 pass "401 → one forced refresh → retry"
 
-# --- 5. provision without consent --------------------------------------------
+# --- 5. provision/status removed ---------------------------------------------
 : > "$LOG"
-run provision supabase --search-id srch_123
-[ "$RC" = 4 ] || fail "no-consent rc=$RC (want 4): $ERR"
-[ ! -s "$LOG" ] || fail "provision request sent without consent"
-pass "provision without --consent → exit 4, no request"
-
-# --- 6. provision with consent -----------------------------------------------
-: > "$LOG"
-run provision supabase --search-id srch_123 --consent --company acme
-[ "$RC" = 0 ] || fail "provision rc=$RC: $ERR"
-grep -q '^POST https://hqapi.test/services/provision$' "$LOG" || fail "provision route"
-grep -q '^BODY {"service_slug":"supabase","user_consent":true,"search_id":"srch_123"}$' "$LOG" || fail "provision body: $(grep BODY "$LOG")"
-[ "$(grep -c '^POST https://index.trygravity.ai/provision/credentials/onetime-tok$' "$LOG")" = 1 ] || fail "credentials URL not POSTed exactly once"
-grep -q '^company:acme SUPABASE_URL https://x.supabase.co$' "$SECRETS" || fail "SUPABASE_URL not stored in company scope: $(cat "$SECRETS")"
-grep -q '^company:acme SUPABASE_ANON_KEY anon-VALUE-9f3$' "$SECRETS" || fail "SUPABASE_ANON_KEY not stored"
-printf '%s' "$OUT" | grep -q 'SUPABASE_URL, SUPABASE_ANON_KEY' || fail "stored names not listed: $OUT"
-printf '%s' "$OUT" | grep -q 'anon-VALUE-9f3' && fail "credential value in stdout"
-printf '%s' "$OUT" | grep -q 'onetime-tok' && fail "one-time URL in stdout"
-printf '%s' "$OUT" | grep -q 'ownership_url\|Take ownership' || fail "ownership link missing"
-: > "$LOG"
-run provision supabase --consent --json
-[ "$RC" = 0 ] || fail "provision --json rc=$RC: $ERR"
-printf '%s' "$OUT" | jq -e '(.credentials_url == null) and (.secrets_stored == ["SUPABASE_ANON_KEY","SUPABASE_URL"])' >/dev/null || fail "--json shape: $OUT"
-pass "provision --consent → one-time link consumed once, values only in hq secrets"
+run provision supabase --consent
+[ "$RC" = 2 ] || fail "provision rc=$RC (want 2 = unknown command): $ERR"
+[ ! -s "$LOG" ] || fail "provision sent a request"
+run status prov_1
+[ "$RC" = 2 ] || fail "status rc=$RC (want 2 = unknown command): $ERR"
+[ ! -s "$LOG" ] || fail "status sent a request"
+grep -q 'index.trygravity.ai\|GRAVITY_PUBLISHER_KEY\|hq secrets' "$SVC" && fail "client must not call the Index directly, hold a publisher key, or write secrets"
+pass "provision/status are not commands; no direct Index calls or secret writes"
 
 echo "PASS: hq-services.test.sh"

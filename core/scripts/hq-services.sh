@@ -1,15 +1,11 @@
 #!/usr/bin/env bash
-# hq-services.sh — find and set up developer services through the HQ Pro
-# services proxy (backed by Gravity Index).
+# hq-services.sh — find developer services through the HQ Pro services proxy
+# (backed by Gravity Index). Read-only: search, browse, info.
 #
 # Usage:
 #   core/scripts/hq-services.sh search "<what you need>" [--follow-up <search_id>] [--json]
 #   core/scripts/hq-services.sh browse [query] [--json]
 #   core/scripts/hq-services.sh info <slug> [--json]
-#   core/scripts/hq-services.sh provision <slug> --consent [--search-id <id>] [--json]
-#   core/scripts/hq-services.sh status <provision_id> [--json]
-#
-# Global flags: --company <slug> | --personal   (secret scope for `hq secrets`)
 #
 # Auth: every call goes to the HQ Pro API (`/services/*`) with the caller's HQ
 # Cognito token from .claude/skills/deploy/scripts/identity-resolve.sh. The
@@ -20,16 +16,7 @@
 # API base: HQ_PRO_API_URL → HQ_API_URL → HQ_VAULT_API_URL → https://hqapi.hq.computer
 # Server contract: core/knowledge/public/hq-core/hq-services-proxy-spec.md
 #
-# provision: the human must have said yes for THIS service in THIS session;
-# `--consent` records that. Without it the command exits 4 before any request.
-# Credentials come back as a one-time `credentials_url` (a Gravity keystore
-# link; the token in the URL is the bearer). This script POSTs it once, writes
-# each key with `hq secrets set <KEY> --from-stdin`, and prints the key names
-# only. Values are never printed or written to disk.
-#
-# Exit: 0 ok, 1 API/HTTP error, 2 usage, 3 not signed in, 4 consent missing,
-#       5 secret write failed (credentials were retrieved and the link is burned;
-#       the vendor's ownership email is the recovery path).
+# Exit: 0 ok, 1 API/HTTP error, 2 usage, 3 not signed in.
 set -euo pipefail
 
 HQ_ROOT="${HQ_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
@@ -44,7 +31,7 @@ need jq
 need "$CURL_BIN"
 
 usage() {
-  sed -n '5,12p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  sed -n '5,8p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
   exit 2
 }
 
@@ -53,20 +40,13 @@ CMD="${1:-}"
 [ -n "$CMD" ] || usage
 shift
 
-SCOPE_ARGS=()
 JSON=0
 FOLLOW_UP=""
-SEARCH_ID=""
-CONSENT=0
 POS=()
 while [ $# -gt 0 ]; do
   case "$1" in
-    --company)   [ $# -ge 2 ] || die "--company needs a slug"; SCOPE_ARGS=(--company "$2"); shift 2 ;;
-    --personal)  SCOPE_ARGS=(--personal); shift ;;
     --json)      JSON=1; shift ;;
     --follow-up) [ $# -ge 2 ] || die "--follow-up needs a search_id"; FOLLOW_UP="$2"; shift 2 ;;
-    --search-id) [ $# -ge 2 ] || die "--search-id needs an id"; SEARCH_ID="$2"; shift 2 ;;
-    --consent)   CONSENT=1; shift ;;
     -h|--help)   usage ;;
     --*)         die "unknown flag: $1" ;;
     *)           POS+=("$1"); shift ;;
@@ -163,7 +143,6 @@ cmd_search() {
     (if (.install.env_vars // []) | length > 0 then "\nEnv vars: \(.install.env_vars | join(", "))" else empty end),
     (if (.credential_request.setup_url // .click_url) then "\nSetup link: \(.credential_request.setup_url // .click_url)" else empty end),
     (if .credential_request.user_message then "\(.credential_request.user_message)" else empty end),
-    (if .recommendation then "\nProvision (only after the user says yes): hq services provision \(.recommendation.slug) --search-id \(.search_id) --consent" else empty end),
     "\nsearch_id: \(.search_id // "")"
   ' "$BODY_FILE"
 }
@@ -194,82 +173,14 @@ cmd_info() {
     (if .install_summary then "\nInstall: \(.install_summary)" else empty end),
     (if (.install_steps // []) | length > 0 then "\nSteps:\n" + ((.install_steps) | map("  \(.step // "?"). \(.action // "")" + (if .command then "\n     $ \(.command)" else "" end)) | join("\n")) else empty end),
     (if (.env_vars_needed // []) | length > 0 then "\nEnv vars: \(.env_vars_needed | join(", "))" else empty end),
-    (if .provisioning_mode then "\nProvisioning: \(.provisioning_mode)" else empty end),
     (if (.setup_url // .click_url) then "\nSetup link: \(.setup_url // .click_url)" else empty end)
   ' "$BODY_FILE"
 }
 
-cmd_provision() {
-  [ -n "$ARG1" ] || die "provision needs a service slug"
-  [ "$CONSENT" = 1 ] || die "provision requires --consent: ask the user \"Want me to create a $ARG1 account for you?\" and pass --consent only after a yes." 4
-  command -v hq >/dev/null 2>&1 || die "hq CLI is required to store provisioned credentials" 5
-
-  local body status
-  body="$(jq -nc --arg slug "$ARG1" --arg sidx "$SEARCH_ID" --arg s "$(session_id)" \
-    '{service_slug:$slug, user_consent:true}
-     + (if $sidx != "" then {search_id:$sidx} else {} end)
-     + (if $s != "" then {session_id:$s} else {} end)')"
-  status="$(api POST /services/provision "$body")"
-  [ "$status" = 201 ] || [ "$status" = 200 ] || fail_http "$status"
-
-  local resp cred_url provision_id
-  resp="$(cat "$BODY_FILE")"
-  provision_id="$(printf '%s' "$resp" | jq -r '.provision_id // ""')"
-  cred_url="$(printf '%s' "$resp" | jq -r '.credentials_url // ""')"
-
-  local stored="[]" failed=0
-  if [ -n "$cred_url" ]; then
-    # One-time keystore link: the POST burns it. Retrieve, store, forget.
-    # The URL carries its own bearer token, so no HQ token goes with it.
-    status="$("$CURL_BIN" -sS -m 45 -o "$BODY_FILE" -w '%{http_code}' -X POST \
-      -H 'Accept: application/json' "$cred_url")" || die "credentials keystore unreachable" 1
-    [ "$status" = 200 ] || fail_http "$status"
-    local key
-    while IFS= read -r key; do
-      [ -n "$key" ] || continue
-      if jq -r --arg k "$key" '.credentials[$k] | if type == "string" then . else tojson end' "$BODY_FILE" \
-        | hq secrets ${SCOPE_ARGS[@]+"${SCOPE_ARGS[@]}"} set "$key" --from-stdin >/dev/null 2>&1; then
-        stored="$(printf '%s' "$stored" | jq -c --arg k "$key" '. + [$k]')"
-      else
-        failed=1
-        echo "hq-services: failed to store secret $key" >&2
-      fi
-    done < <(jq -r '.credentials // {} | keys[]' "$BODY_FILE")
-    : > "$BODY_FILE"
-  fi
-
-  if [ "$JSON" = 1 ]; then
-    printf '%s' "$resp" | jq --argjson stored "$stored" \
-      'del(.credentials_url) | .secrets_stored = $stored'
-  else
-    printf '%s' "$resp" | jq -r --argjson stored "$stored" '
-      "Provisioned \(.service_slug)  (status: \(.status), mode: \(.provisioning_mode // ""))",
-      "provision_id: \(.provision_id)",
-      (if ($stored|length) > 0 then "Secrets stored in hq secrets: \($stored|join(", "))  — use `hq secrets exec --only \($stored|join(","))` or `hq run`" else empty end),
-      (if .ownership_url then "\nTake ownership of the vendor account: \(.ownership_url)" + (if .ownership_expires_at then "  (expires \(.ownership_expires_at))" else "" end) else empty end),
-      (if .signup_url then "\nFinish sign-up: \(.signup_url)" else empty end),
-      (if (.integration_steps // []) | length > 0 then "\nIntegration steps:\n" + ((.integration_steps) | map("  \(.step // "?"). \(.action // "")" + (if .command then "\n     $ \(.command)" else "" end)) | join("\n")) else empty end),
-      (if (.env_vars // []) | length > 0 then "\nEnv vars: \(.env_vars | join(", "))" else empty end)
-    '
-  fi
-  [ "$failed" = 0 ] || die "some credentials were not stored; the one-time link is used up. Recover through the vendor ownership email for provision $provision_id." 5
-}
-
-cmd_status() {
-  [ -n "$ARG1" ] || die "status needs a provision_id"
-  local status
-  status="$(api GET "/services/provision/$(uri "$ARG1")")"
-  [ "$status" = 200 ] || fail_http "$status"
-  [ "$JSON" = 1 ] && { emit_json; return; }
-  jq -r '"\(.service_slug)  \(.status)  (mode: \(.provisioning_mode // ""), created: \(.created_at // ""), expires: \(.expires_at // "n/a"), credentials fingerprint: \(.credentials_fingerprint // "n/a"))"' "$BODY_FILE"
-}
-
 case "$CMD" in
-  search)    cmd_search ;;
-  browse)    cmd_browse ;;
-  info)      cmd_info ;;
-  provision) cmd_provision ;;
-  status)    cmd_status ;;
+  search) cmd_search ;;
+  browse) cmd_browse ;;
+  info)   cmd_info ;;
   -h|--help|help) usage ;;
-  *) die "unknown command: $CMD (search|browse|info|provision|status)" ;;
+  *) die "unknown command: $CMD (search|browse|info)" ;;
 esac

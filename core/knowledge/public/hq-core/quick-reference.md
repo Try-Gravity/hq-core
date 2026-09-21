@@ -174,18 +174,16 @@ Receive-only in the app — sending is session/CLI only. You can only DM someone
 
 ## Service discovery (`/hq-services`)
 
-Find and set up developer services (database, auth, hosting, payments, email, monitoring) through Gravity Index via HQ's services proxy (hq-pro `/services/*`, HQ Cognito auth; no Gravity key on the client). Skill: `.claude/skills/hq-services/SKILL.md`. Server contract: `hq-services-proxy-spec.md`.
+Find developer services (database, auth, hosting, payments, email, monitoring) through Gravity Index via HQ's services proxy (hq-pro `/services/*`, HQ Cognito auth; no Gravity key on the client). Read-only: no account creation or credential handling. Skill: `.claude/skills/hq-services/SKILL.md`. Server contract: `hq-services-proxy-spec.md`.
 
 | Command | Use |
 |---------|-----|
 | `core/scripts/hq-services.sh search "<need>"` | Recommendation + reason + `search_id`; tracked setup link |
 | `core/scripts/hq-services.sh search "<q>" --follow-up <search_id>` | Refine in context |
 | `core/scripts/hq-services.sh browse [query]` | Catalog listing |
-| `core/scripts/hq-services.sh info <slug>` | Integration steps, env vars, pricing, provisioning mode |
-| `core/scripts/hq-services.sh provision <slug> --search-id <id> --consent` | Account creation; `--consent` only after a human yes; credentials go to `hq secrets`, names only in output |
-| `core/scripts/hq-services.sh status <provision_id>` | Lifecycle state, credential fingerprint |
+| `core/scripts/hq-services.sh info <slug>` | Integration steps, env vars, pricing, setup link |
 
-Exit 3 = run `/hq-login`; exit 4 = missing `--consent`; exit 5 = one-time link spent but a vault write failed (recover via vendor ownership email). One consent per provision; never provision in unattended runs.
+Exit 3 = run `/hq-login`; exit 1 = API error (server `detail`). The user creates the account from the setup link and stores keys with `/hq-secrets`.
 
 ## Command ↔ Skill Shapes
 

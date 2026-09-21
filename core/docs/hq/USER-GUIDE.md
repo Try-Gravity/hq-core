@@ -130,18 +130,16 @@ Receiving is handled by the **HQ Desktop App** (it's receive-only — there's no
 
 ### Service discovery (`/hq-services`)
 
-Find and set up developer services (databases, auth, hosting, payments, email, monitoring) from a session. Backed by Gravity Index through HQ's services proxy — your HQ login is the only credential involved. Full reference: `.claude/skills/hq-services/SKILL.md`.
+Find developer services (databases, auth, hosting, payments, email, monitoring) from a session. Backed by Gravity Index through HQ's services proxy — your HQ login is the only credential involved. Read-only: you create the account yourself from the setup link and store the keys with `/hq-secrets`. Full reference: `.claude/skills/hq-services/SKILL.md`.
 
 | Command | What it does |
 |---------|--------------|
 | `core/scripts/hq-services.sh search "<need>"` | Recommendation with a reason, integration steps, and a tracked setup link |
 | `core/scripts/hq-services.sh search "<follow-up>" --follow-up <search_id>` | Refine a previous search in context |
 | `core/scripts/hq-services.sh browse [query]` | List the catalog |
-| `core/scripts/hq-services.sh info <slug>` | One service: pricing, integration steps, env vars needed |
-| `core/scripts/hq-services.sh provision <slug> --search-id <id> --consent` | Create the account after you say yes; credentials land in `hq secrets`, never in chat |
-| `core/scripts/hq-services.sh status <provision_id>` | Lifecycle state of a provision |
+| `core/scripts/hq-services.sh info <slug>` | One service: pricing, integration steps, env vars needed, setup link |
 
-Provisioning always asks first, once per service. Server contract for hq-pro: `core/knowledge/public/hq-core/hq-services-proxy-spec.md`.
+Server contract for hq-pro: `core/knowledge/public/hq-core/hq-services-proxy-spec.md`.
 
 ### Company & Infrastructure
 | Command | What it does |

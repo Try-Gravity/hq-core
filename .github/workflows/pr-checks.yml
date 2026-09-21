@@ -744,7 +744,7 @@ jobs:
         run: bash core/scripts/tests/harness-live-smoke.sh --runtimes claude,codex,grok
       - name: hq-session mints scope capability on company bind
         run: bash core/scripts/tests/hq-session.test.sh
-      - name: hq-services proxies through hq-pro (bearer via stdin, consent gate, one-shot credentials)
+      - name: hq-services proxies through hq-pro (bearer via stdin, read-only routes, no direct Index calls)
         run: bash core/scripts/tests/hq-services.test.sh
       - name: Bounded-action scope contract (Claude+Codex shared text)
         run: bash core/scripts/tests/startwork-bounded-action-contract.test.sh
